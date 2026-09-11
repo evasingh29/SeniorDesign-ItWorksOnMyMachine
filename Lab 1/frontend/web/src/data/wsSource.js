@@ -25,7 +25,12 @@ export function createWebSocketSource(url) {
 
         socket.onmessage = (event) => {
           try {
-            onSample(JSON.parse(event.data))
+            const data = JSON.parse(event.data)
+            if (Array.isArray(data)) {
+              data.forEach((sample) => onSample(sample))
+            } else if (data && typeof data === 'object') {
+              onSample(data)
+            }
           } catch {
             // A malformed frame is dropped rather than crashing the feed. It
             // then ages into staleness on its own, which is the correct
