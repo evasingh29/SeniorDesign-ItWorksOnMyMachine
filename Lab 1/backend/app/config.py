@@ -1,13 +1,20 @@
-"""Configuration settings for ECE:4880 Thermometer FastAPI Backend."""
-
+from pathlib import Path
 from typing import List, Optional
+import uuid
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent.parent
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(
+            str(BASE_DIR / ".env"),
+            str(REPO_ROOT / ".env"),
+            ".env",
+        ),
         env_file_encoding="utf-8",
         extra="ignore"
     )
@@ -22,7 +29,7 @@ class Settings(BaseSettings):
     )
     # Sensor 2 ROM address
     SENSOR_2_ADDRESS: str = Field(
-        default="28-E4-C4-EB-10-00-00-1A",
+        default="28-F4-C4-EB-10-00-00-1A",
         description="DS18B20 64-bit ROM Hardware Address for Sensor 2"
     )
 
@@ -50,7 +57,7 @@ class Settings(BaseSettings):
         description="Enable TLS/SSL connection to MQTT broker"
     )
     MQTT_CLIENT_ID: str = Field(
-        default="fastapi-thermometer-backend",
+        default_factory=lambda: f"fastapi-thermometer-{uuid.uuid4().hex[:8]}",
         description="MQTT client identifier"
     )
 

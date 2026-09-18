@@ -32,7 +32,7 @@ Documented 64-bit ROM addresses for the two Dallas DS18B20 1-Wire temperature se
 | Sensor | ROM Hardware Address | Default Color |
 |---|---|---|
 | **Sensor 1** (`s1`) | `28-31-F5-A8-11-00-00-E4` | Red (`#d62828`) |
-| **Sensor 2** (`s2`) | `28-E4-C4-EB-10-00-00-1A` | Blue (`#1d61c4`) |
+| **Sensor 2** (`s2`) | `28-F4-C4-EB-10-00-00-1A` | Blue (`#1d61c4`) |
 
 ---
 

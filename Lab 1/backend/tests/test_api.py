@@ -13,7 +13,7 @@ def test_health_endpoint():
     assert "sensor_addresses" in data
     assert "history_samples" in data
     assert data["sensor_addresses"]["s1"] == "28-31-F5-A8-11-00-00-E4"
-    assert data["sensor_addresses"]["s2"] == "28-E4-C4-EB-10-00-00-1A"
+    assert data["sensor_addresses"]["s2"] == "28-F4-C4-EB-10-00-00-1A"
 
 
 def test_get_history_endpoint():
