@@ -89,7 +89,27 @@ Virtually presses or releases a hardware button by publishing an MQTT command to
 }
 ```
 
-### 4. `WS /ws`
+### 4. `GET /api/settings/alerts`
+Returns current email alert settings (recipient, thresholds, enabled status, SMTP sender).
+
+### 5. `POST /api/settings/alerts`
+Updates email alert parameters and thresholds.
+
+**Request Body:**
+```json
+{
+  "enabled": true,
+  "recipient_email": "user@example.com",
+  "min_temperature_c": 15.0,
+  "max_temperature_c": 35.0,
+  "cooldown_seconds": 60
+}
+```
+
+### 6. `POST /api/settings/alerts/test`
+Dispatches a test verification email via Gmail SMTP to verify recipient and credentials.
+
+### 7. `WS /ws`
 WebSocket endpoint for real-time telemetry. Immediately transmits the rolling 300-second history array upon connection, then streams continuous 1 Hz live sample updates.
 
 ---

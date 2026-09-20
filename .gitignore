@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Digital Thermometer local data cache
+data/history_cache.json
+*.tmp
+history_cache.json
+

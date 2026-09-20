@@ -86,8 +86,69 @@ class Settings(BaseSettings):
     # Rate at which WebSocket updates are broadcast (Hz/seconds)
     BROADCAST_INTERVAL_SECONDS: float = 1.0
 
+    # Local file path for persisting 300-second rolling history across restarts
+    HISTORY_CACHE_FILE: str = Field(
+        default=str(BASE_DIR / "data" / "history_cache.json"),
+        alias="history_cache_file",
+        description="File path for persisting the 300-second rolling temperature history"
+    )
+
     # Development simulation mode (generates mock MQTT data locally)
     DEV_MODE: bool = False
+
+    # --------------------------------------------------------------------------
+    # Gmail SMTP & Email Alerts Settings
+    # --------------------------------------------------------------------------
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_SENDER: str = "itworksonmymachine.sd@gmail.com"
+    APP_PASSWORD: Optional[str] = Field(
+        default=None,
+        alias="app_password",
+        description="Gmail App Password from .env"
+    )
+    ALERT_RECIPIENT_EMAIL: str = Field(
+        default="",
+        alias="alert_recipient_email",
+        description="Default recipient email address for temperature alerts"
+    )
+    ALERT_MIN_TEMP_C: Optional[float] = Field(
+        default=15.0,
+        alias="alert_min_temp_c",
+        description="Default minimum temperature threshold in °C"
+    )
+    ALERT_MAX_TEMP_C: Optional[float] = Field(
+        default=35.0,
+        alias="alert_max_temp_c",
+        description="Default maximum temperature threshold in °C"
+    )
+    ALERT_LOW_MESSAGE: str = Field(
+        default="Temperature has fallen below the minimum!",
+        alias="alert_low_message",
+        description="Custom message for low temperature alert"
+    )
+    ALERT_HIGH_MESSAGE: str = Field(
+        default="Temperature has exceeded the maximum!",
+        alias="alert_high_message",
+        description="Custom message for high temperature alert"
+    )
+    ALERT_ENABLED: bool = Field(
+        default=False,
+        alias="alert_enabled",
+        description="Whether email alerts are enabled on startup"
+    )
+    ALERT_COOLDOWN_SECONDS: int = Field(
+        default=60,
+        alias="alert_cooldown_seconds",
+        description="Cooldown duration in seconds between consecutive alert emails"
+    )
+
+    @property
+    def cleaned_app_password(self) -> str:
+        """Return app password stripped of whitespace and quotes."""
+        if not self.APP_PASSWORD:
+            return ""
+        return self.APP_PASSWORD.strip().replace(" ", "").replace('"', "").replace("'", "")
 
     @property
     def cors_origins_list(self) -> List[str]:
@@ -95,4 +156,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
 

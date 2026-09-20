@@ -3,6 +3,7 @@ import TemperatureChart from './components/TemperatureChart.jsx'
 import SensorReadout from './components/SensorReadout.jsx'
 import HoverReadout from './components/HoverReadout.jsx'
 import StatusBar from './components/StatusBar.jsx'
+import AlertSettings from './components/AlertSettings.jsx'
 import { useThermometer } from './lib/useThermometer.js'
 import { SENSOR_KEYS } from './lib/constants.js'
 import { windowStats, recentTrend } from './lib/stats.js'
@@ -100,6 +101,8 @@ export default function App() {
           </div>
         </aside>
       </div>
+
+      <AlertSettings unit={unit} />
 
       <StatusBar stale={stale} btn1={status.btn1} btn2={status.btn2} sourceLabel={sourceLabel} />
     </div>

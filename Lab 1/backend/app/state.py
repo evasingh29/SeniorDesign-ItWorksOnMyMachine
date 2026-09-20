@@ -1,17 +1,27 @@
 """State and rolling history management for thermometer sensors and buttons."""
 
 import collections
+import json
+import logging
+import os
 import threading
 import time
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("thermometer.state")
 
 
 class ThermometerState:
     """Thread-safe state and 300-second rolling history manager for digital thermometer."""
 
-    def __init__(self, history_maxlen: int = 300):
+    def __init__(
+        self,
+        history_maxlen: int = 300,
+        cache_file_path: Optional[str] = None,
+    ):
         self._lock = threading.Lock()
         self.history_maxlen = history_maxlen
+        self.cache_file_path = cache_file_path
         self.history: collections.deque[Dict[str, Any]] = collections.deque(
             maxlen=history_maxlen
         )
@@ -24,6 +34,70 @@ class ThermometerState:
         self.button1_on: bool = False
         self.button2_on: bool = False
         self.last_message_time: float = 0.0
+
+        if self.cache_file_path:
+            self._load_cache()
+
+    def _load_cache(self) -> None:
+        """Load and validate cached history from disk, discarding samples older than history_maxlen."""
+        if not self.cache_file_path or not os.path.isfile(self.cache_file_path):
+            return
+
+        try:
+            with open(self.cache_file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if not isinstance(data, list):
+                logger.warning(
+                    f"History cache at {self.cache_file_path} is not a list. Starting with empty history."
+                )
+                return
+
+            now = time.time()
+            valid_samples = []
+            for sample in data:
+                if not isinstance(sample, dict):
+                    continue
+                ts = sample.get("ts")
+                if not isinstance(ts, (int, float)):
+                    continue
+                # Keep only samples strictly within the rolling window (e.g. past 300 seconds)
+                age = now - ts
+                if 0 <= age <= self.history_maxlen or (-5.0 <= age < 0):
+                    valid_samples.append(sample)
+
+            valid_samples.sort(key=lambda s: s["ts"])
+
+            with self._lock:
+                self.history = collections.deque(
+                    valid_samples[-self.history_maxlen:], maxlen=self.history_maxlen
+                )
+                logger.info(
+                    f"Restored {len(self.history)} valid historical samples from cache: {self.cache_file_path}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to load history cache from {self.cache_file_path}: {e}. Starting with empty history."
+            )
+            with self._lock:
+                self.history.clear()
+
+    def _save_cache_unlocked(self) -> None:
+        """Persist current history deque to disk using atomic rename."""
+        if not self.cache_file_path:
+            return
+
+        try:
+            cache_dir = os.path.dirname(os.path.abspath(self.cache_file_path))
+            os.makedirs(cache_dir, exist_ok=True)
+
+            temp_file = self.cache_file_path + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(list(self.history), f)
+
+            os.replace(temp_file, self.cache_file_path)
+        except Exception as e:
+            logger.warning(f"Failed to persist history cache to {self.cache_file_path}: {e}")
 
     def mark_message_received(self, timestamp: Optional[float] = None) -> None:
         """Record the time of the latest message from the hardware."""
@@ -144,6 +218,7 @@ class ThermometerState:
             is_online = self.last_message_time > 0 and (time.time() - self.last_message_time) <= threshold_seconds
             sample = self._build_sample_unlocked(ts=current_ts, box_online=is_online)
             self.history.append(sample)
+            self._save_cache_unlocked()
             return sample
 
     def get_history(self) -> List[Dict[str, Any]]:
@@ -155,3 +230,4 @@ class ThermometerState:
         """Clear all historical samples."""
         with self._lock:
             self.history.clear()
+            self._save_cache_unlocked()

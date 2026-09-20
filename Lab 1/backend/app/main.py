@@ -3,12 +3,13 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .alerts import EmailAlertManager
 from .config import settings
 from .mqtt_client import ThermometerMQTTClient
 from .state import ThermometerState
@@ -20,9 +21,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("thermometer.app")
 
-# Shared state and MQTT service instances
-thermometer_state = ThermometerState(history_maxlen=300)
+# Shared state, MQTT service, and Alert Manager instances
+thermometer_state = ThermometerState(
+    history_maxlen=300,
+    cache_file_path=settings.HISTORY_CACHE_FILE,
+)
 mqtt_service = ThermometerMQTTClient(thermometer_state, settings)
+alert_manager = EmailAlertManager(settings)
 
 
 class ConnectionManager:
@@ -63,7 +68,8 @@ async def broadcast_loop():
     """
     Background worker running at 1 Hz that:
     1. Records a 1-second sample into the 300-sample rolling history buffer.
-    2. Broadcasts the live sample to connected WebSocket clients if box is online.
+    2. Checks temperature thresholds and triggers email alerts if exceeded.
+    3. Broadcasts the live sample to connected WebSocket clients if box is online.
     """
     logger.info("Starting WebSocket broadcast worker & rolling history recorder (1 Hz).")
     while True:
@@ -73,14 +79,17 @@ async def broadcast_loop():
                 threshold_seconds=settings.STALE_THRESHOLD_SECONDS
             )
 
+            # Check temperature thresholds and trigger email alerts if configured
+            alert_manager.check_sample_and_alert(sample)
+
             # Check if the thermometer box is online before broadcasting live frame
             if thermometer_state.is_box_online(
                 threshold_seconds=settings.STALE_THRESHOLD_SECONDS
             ):
                 await manager.broadcast(sample)
             else:
-                # When box is offline, we pause live broadcasts so frontend's 3-second
-                # timeout flips to "BOX OFFLINE" cleanly.
+                # When box is offline, pause live broadcasts so frontend's staleness
+                # timer triggers BOX OFFLINE.
                 pass
         except Exception as e:
             logger.error(f"Error in broadcast loop: {e}")
@@ -107,8 +116,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ECE:4880 Digital Thermometer Backend",
-    description="FastAPI WebSocket and REST gateway with 300s rolling history between HiveMQ MQTT and React frontend.",
-    version="1.1.0",
+    description="FastAPI WebSocket and REST gateway with 300s rolling history and Gmail alerts between HiveMQ MQTT and React frontend.",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -136,6 +145,37 @@ class ButtonCommandResponse(BaseModel):
     message: str
 
 
+class AlertSettingsUpdateRequest(BaseModel):
+    enabled: Optional[bool] = Field(default=None, description="Enable or disable automated email alerts")
+    recipient_email: Optional[str] = Field(default=None, description="Recipient email address for alerts")
+    min_temperature_c: Optional[float] = Field(default=None, description="Minimum temperature threshold in °C")
+    max_temperature_c: Optional[float] = Field(default=None, description="Maximum temperature threshold in °C")
+    low_message: Optional[str] = Field(default=None, description="Custom message for low temperature alert")
+    high_message: Optional[str] = Field(default=None, description="Custom message for high temperature alert")
+    cooldown_seconds: Optional[int] = Field(default=None, description="Cooldown seconds between consecutive alerts")
+
+
+class AlertSettingsResponse(BaseModel):
+    enabled: bool
+    recipient_email: str
+    min_temperature_c: Optional[float]
+    max_temperature_c: Optional[float]
+    low_message: str
+    high_message: str
+    cooldown_seconds: int
+    smtp_sender: str
+    smtp_configured: bool
+
+
+class TestEmailRequest(BaseModel):
+    recipient_email: Optional[str] = Field(default=None, description="Optional target recipient email for testing")
+
+
+class TestEmailResponse(BaseModel):
+    ok: bool
+    message: str
+
+
 class HealthResponse(BaseModel):
     status: str
     box_online: bool
@@ -143,6 +183,8 @@ class HealthResponse(BaseModel):
     dev_mode: bool
     clients_connected: int
     history_samples: int
+    alerts_enabled: bool
+    alert_recipient: str
     sensor_addresses: dict
 
 
@@ -162,6 +204,7 @@ def root():
         "docs": "/docs",
         "health": "/health",
         "history": "/api/history",
+        "alerts_settings": "/api/settings/alerts",
         "websocket": "ws://localhost:8000/ws",
     }
 
@@ -169,6 +212,7 @@ def root():
 @app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health status check endpoint."""
+    alert_cfg = alert_manager.get_settings()
     return HealthResponse(
         status="ok",
         box_online=thermometer_state.is_box_online(
@@ -178,6 +222,8 @@ def health_check():
         dev_mode=settings.DEV_MODE,
         clients_connected=len(manager.active_connections),
         history_samples=len(thermometer_state.get_history()),
+        alerts_enabled=alert_cfg["enabled"],
+        alert_recipient=alert_cfg["recipient_email"],
         sensor_addresses={
             "s1": settings.SENSOR_1_ADDRESS,
             "s2": settings.SENSOR_2_ADDRESS,
@@ -190,6 +236,46 @@ def get_rolling_history():
     """Retrieve the rolling 300-second history buffer."""
     hist = thermometer_state.get_history()
     return HistoryResponse(history=hist, count=len(hist))
+
+
+@app.get("/api/settings/alerts", response_model=AlertSettingsResponse)
+@app.get("/api/alerts/settings", response_model=AlertSettingsResponse, include_in_schema=False)
+def get_alert_settings():
+    """Retrieve current email alert settings and threshold configurations."""
+    return AlertSettingsResponse(**alert_manager.get_settings())
+
+
+@app.post("/api/settings/alerts", response_model=AlertSettingsResponse)
+@app.put("/api/settings/alerts", response_model=AlertSettingsResponse, include_in_schema=False)
+@app.post("/api/alerts/settings", response_model=AlertSettingsResponse, include_in_schema=False)
+def update_alert_settings(payload: AlertSettingsUpdateRequest):
+    """Update email alert thresholds, recipient, and enabled state."""
+    updated = alert_manager.update_settings(
+        enabled=payload.enabled,
+        recipient_email=payload.recipient_email,
+        min_temperature_c=payload.min_temperature_c,
+        max_temperature_c=payload.max_temperature_c,
+        low_message=payload.low_message,
+        high_message=payload.high_message,
+        cooldown_seconds=payload.cooldown_seconds,
+    )
+    return AlertSettingsResponse(**updated)
+
+
+@app.post("/api/settings/alerts/test", response_model=TestEmailResponse)
+@app.post("/api/alerts/test", response_model=TestEmailResponse, include_in_schema=False)
+def test_alert_email(payload: Optional[TestEmailRequest] = None):
+    """
+    Send an immediate test email to verify Gmail SMTP credentials and recipient delivery.
+    """
+    target = payload.recipient_email if payload else None
+    success, msg = alert_manager.send_test_email(to_email=target)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
+        )
+    return TestEmailResponse(ok=True, message=msg)
 
 
 @app.post("/api/buttons/{button_id}", response_model=ButtonCommandResponse)
