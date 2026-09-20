@@ -304,11 +304,21 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
     // space on the left rather than stretching the history it does have.
     const size = buffer.size
 
+    // Off-scale readings are clamped to the axis bounds so the trace pins flat
+    // against the top or bottom edge until it comes back in range, instead of
+    // vanishing outside the plot box. A break in the line has to mean exactly
+    // one thing -- no data -- and an unclamped excursion looks like one.
+    //
+    // Clamping happens HERE and not in the ring buffer: the buffer feeds the
+    // numeric readouts and the delta, which must keep reporting the measured
+    // value. A 61 C probe reads 61.0 on the panel while its trace sits on the
+    // 50 C ceiling.
     const rows = SENSOR_KEYS.map((key) => {
       const values = buffer.valuesFor(key)
       const row = new Array(HISTORY_SECONDS).fill(null)
       for (let age = 0; age < size; age += 1) {
-        row[age] = values[size - 1 - age]
+        const c = values[size - 1 - age]
+        row[age] = c === null ? null : Math.min(Math.max(c, Y_MIN_C), Y_MAX_C)
       }
       return row
     })
