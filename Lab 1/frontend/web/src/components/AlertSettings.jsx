@@ -1,21 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { UNIT_C, UNIT_F, cToF, fToC, unitSymbol } from '../lib/temperature.js'
-
-function getApiBaseUrl() {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL.replace(/\/+$/, '')
-  }
-  if (import.meta.env.VITE_WS_URL) {
-    try {
-      const parsed = new URL(import.meta.env.VITE_WS_URL)
-      const protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:'
-      return `${protocol}//${parsed.host}`
-    } catch {
-      // ignore invalid URL and fallback
-    }
-  }
-  return 'http://localhost:8000'
-}
+import { getApiBaseUrl } from '../lib/api.js'
 
 export default function AlertSettings({ unit }) {
   const [recipientEmail, setRecipientEmail] = useState('')

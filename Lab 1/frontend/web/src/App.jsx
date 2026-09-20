@@ -8,12 +8,21 @@ import { useThermometer } from './lib/useThermometer.js'
 import { SENSOR_KEYS } from './lib/constants.js'
 import { windowStats, recentTrend } from './lib/stats.js'
 import { UNIT_C, UNIT_F, unitSymbol } from './lib/temperature.js'
+import { sendButtonCommand } from './lib/api.js'
 import './styles.css'
 
 export default function App() {
   const { buffer, tick, status, stale } = useThermometer()
   const [unit, setUnit] = useState(UNIT_C)
   const [hover, setHover] = useState(null)
+
+  const handleToggleLcd = async (buttonId, desiredState) => {
+    try {
+      await sendButtonCommand(buttonId, desiredState)
+    } catch (err) {
+      console.error(`Failed to toggle LCD for sensor ${buttonId}:`, err)
+    }
+  }
 
   // Recomputed once per sample, not per render: the window is 300 points and
   // this runs on every tick, so it stays keyed to `tick`.
@@ -80,6 +89,8 @@ export default function App() {
               stale={stale}
               stats={perSensor[key].stats}
               trend={perSensor[key].trend}
+              lcdOn={key === 's1' ? status.btn1 : status.btn2}
+              onToggleLcd={handleToggleLcd}
             />
           ))}
 
@@ -104,7 +115,13 @@ export default function App() {
 
       <AlertSettings unit={unit} />
 
-      <StatusBar stale={stale} btn1={status.btn1} btn2={status.btn2} sourceLabel={sourceLabel} />
+      <StatusBar
+        stale={stale}
+        btn1={status.btn1}
+        btn2={status.btn2}
+        onToggleLcd={handleToggleLcd}
+        sourceLabel={sourceLabel}
+      />
     </div>
   )
 }

@@ -296,13 +296,61 @@ body {
   color: var(--ink-dim);
 }
 
-.readout__detail {
+.readout__detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.readout__detail {
   font-size: 10px;
   font-family: var(--mono);
   color: var(--ink-dim);
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.readout__lcd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  background: var(--shell);
+  border: 1px solid var(--panel-edge);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.readout__lcd-badge:hover {
+  background: var(--chassis-hi);
+  border-color: var(--chassis-edge);
+  color: var(--ink);
+}
+
+.readout__lcd-badge--on {
+  border-color: rgba(90, 163, 99, 0.6);
+  color: var(--ok);
+}
+
+.readout__lcd-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #5f574f;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.readout__lcd-badge--on .readout__lcd-dot {
+  background: var(--ok);
+  box-shadow: 0 0 5px rgba(90, 163, 99, 0.8);
 }
 
 .readout--missing .readout__number { color: var(--ink-dim); }
@@ -381,21 +429,78 @@ body {
   box-shadow: 0 0 0 3px rgba(227, 165, 44, 0.18);
 }
 
-.statusbar__buttons { display: flex; gap: 8px; }
-
-.lamp {
-  padding: 4px 10px;
-  border: 1px solid var(--panel-edge);
-  background: var(--shell);
-  color: #5f574f;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+.statusbar__lcd-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.lamp--on {
-  background: var(--warn);
-  border-color: var(--warn);
-  color: #241f1b;
+.statusbar__lcd-title {
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.lcd-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  background: var(--shell);
+  border: 1px solid var(--panel-edge);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.lcd-toggle-btn:hover {
+  background: var(--chassis-hi);
+  border-color: var(--chassis-edge);
+  color: var(--ink);
+}
+
+.lcd-toggle-btn--on {
+  border-color: rgba(90, 163, 99, 0.7);
+  background: rgba(90, 163, 99, 0.08);
+  color: var(--ink);
+}
+
+.lcd-toggle-btn__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5f574f;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lcd-toggle-btn--on .lcd-toggle-btn__dot {
+  background: var(--ok);
+  box-shadow: 0 0 6px rgba(90, 163, 99, 0.85);
+}
+
+.lcd-toggle-btn__text {
+  color: var(--ink-dim);
+}
+
+.lcd-toggle-btn--on .lcd-toggle-btn__text {
+  color: var(--ink-mid);
+}
+
+.lcd-toggle-btn__state {
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.lcd-toggle-btn--on .lcd-toggle-btn__state {
+  color: var(--ok);
 }
 
 .statusbar__source {
