@@ -133,7 +133,7 @@ class Settings(BaseSettings):
         description="Custom message for high temperature alert"
     )
     ALERT_ENABLED: bool = Field(
-        default=False,
+        default=True,
         alias="alert_enabled",
         description="Whether email alerts are enabled on startup"
     )

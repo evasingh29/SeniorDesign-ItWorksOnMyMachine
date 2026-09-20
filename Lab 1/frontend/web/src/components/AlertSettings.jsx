@@ -18,7 +18,6 @@ function getApiBaseUrl() {
 }
 
 export default function AlertSettings({ unit }) {
-  const [enabled, setEnabled] = useState(true)
   const [recipientEmail, setRecipientEmail] = useState('')
   const [minInput, setMinInput] = useState('')
   const [maxInput, setMaxInput] = useState('')
@@ -46,7 +45,6 @@ export default function AlertSettings({ unit }) {
         const data = await res.json()
         if (!active) return
 
-        setEnabled(Boolean(data.enabled))
         setRecipientEmail(data.recipient_email || '')
         setLowMessage(data.low_message || '')
         setHighMessage(data.high_message || '')
@@ -146,7 +144,8 @@ export default function AlertSettings({ unit }) {
     const maxC = unit === UNIT_F ? fToC(maxParsed) : maxParsed
 
     const payload = {
-      enabled,
+      // Alerts are always armed: there is no mute control by design.
+      enabled: true,
       recipient_email: recipientEmail.trim(),
       min_temperature_c: Math.round(minC * 10) / 10,
       max_temperature_c: Math.round(maxC * 10) / 10,
@@ -173,7 +172,6 @@ export default function AlertSettings({ unit }) {
         message: 'Alert configuration saved successfully.',
       })
       if (resData.settings) {
-        setEnabled(resData.settings.enabled)
         setRecipientEmail(resData.settings.recipient_email)
         setLowMessage(resData.settings.low_message)
         setHighMessage(resData.settings.high_message)
@@ -224,18 +222,9 @@ export default function AlertSettings({ unit }) {
           <h2 className="alerts-panel__title">EMAIL ALERT SETTINGS</h2>
         </div>
         <div className="alerts-panel__status">
-          <label className="alerts-panel__toggle-label">
-            <input
-              type="checkbox"
-              className="alerts-panel__checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              disabled={loading}
-            />
-            <span className={`alerts-panel__toggle-text ${enabled ? 'alerts-panel__toggle-text--on' : ''}`}>
-              {enabled ? 'ALERTS ARMED' : 'ALERTS MUTED'}
-            </span>
-          </label>
+          <span className="alerts-panel__toggle-text alerts-panel__toggle-text--on">
+            ALERTS ARMED
+          </span>
         </div>
       </div>
 
