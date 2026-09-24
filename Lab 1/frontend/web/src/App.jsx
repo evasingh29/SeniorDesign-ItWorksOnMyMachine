@@ -24,8 +24,6 @@ export default function App() {
     }
   }
 
-  // Recomputed once per sample, not per render: the window is 300 points and
-  // this runs on every tick, so it stays keyed to `tick`.
   const perSensor = useMemo(() => {
     const out = {}
     for (const key of SENSOR_KEYS) {
@@ -35,8 +33,6 @@ export default function App() {
     return out
   }, [tick, buffer])
 
-  // Difference between the two sensors, in degrees. A temperature *interval*,
-  // so it scales by 9/5 without the +32 offset.
   const deltaC = useMemo(() => {
     const a = buffer.latest('s1')
     const b = buffer.latest('s2')

@@ -6,7 +6,6 @@ const TREND_GLYPH = { rising: '▲', falling: '▼', flat: '—' }
 /**
  * Current value for one sensor, plus min/max/avg over the visible window, a
  * trend arrow, and a physical LCD display toggle.
- *
  * A missing reading shows "--.-" and the fault text, never a number. Stats
  * still display, computed from whatever samples the window does have.
  */

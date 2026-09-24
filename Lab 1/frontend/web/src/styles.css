@@ -1,9 +1,4 @@
-/* Benchtop instrument: dark chassis, light paper chart window, two pen colors.
-   Flat fills only — no gradients, no cards. */
-
 :root {
-  /* Chassis: a proper depth ladder instead of three near-identical browns.
-     Each step is a visible increment, so panels read as recessed hardware. */
   --shell: #12100f;
   --chassis: #1f1d1b;
   --chassis-hi: #34302c;
@@ -11,20 +6,16 @@
   --panel: #292522;
   --panel-edge: #383330;
 
-  /* Chart paper: warm, slightly lighter, with a distinct border and rule color. */
   --paper: #f7f4ed;
   --paper-edge: #cfc8ba;
   --rule: rgba(96, 88, 78, 0.30);
   --rule-strong: rgba(96, 88, 78, 0.48);
   --axis-ink: #4a443d;
 
-  /* Text: three real steps of emphasis. */
   --ink: #f2efe8;
   --ink-mid: #b3aaa0;
   --ink-dim: #857c72;
 
-  /* Pens: deeper, richer versions of the same red/blue so they sit on
-     warm paper without glowing. */
   --pen-1: #c62c28;
   --pen-2: #1f5fb0;
 
@@ -174,8 +165,6 @@ body {
   border-right: 1px dashed rgba(60, 54, 47, 0.75);
 }
 
-/* --- on-chart tooltip --- */
-
 .tip {
   position: absolute;
   top: 0;
@@ -241,8 +230,6 @@ body {
   gap: 12px;
 }
 
-/* --- readouts --- */
-
 .readout {
   display: flex;
   gap: 0;
@@ -252,8 +239,6 @@ body {
   border-radius: 0 3px 3px 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 3px rgba(0, 0, 0, 0.35);
 }
-
-/* The pen stripe is the full-height left edge: unmistakable key to the trace. */
 .readout__pen {
   width: 5px;
   flex: 0 0 5px;
@@ -355,15 +340,12 @@ body {
 
 .readout--missing .readout__number { color: var(--ink-dim); }
 
-/* Placeholder sits optically high in mono at display size; nudge it down and
-   loosen the pair so it reads as one "no value" mark. */
 .readout__number--blank {
   letter-spacing: 0.06em;
   opacity: 0.55;
 }
 .readout--missing .readout__detail { color: var(--warn); }
 
-/* Legend for the hatched no-data band. */
 .gapkey {
   display: flex;
   align-items: center;
@@ -390,7 +372,6 @@ body {
   );
 }
 
-/* --- status strip --- */
 
 .statusbar {
   display: flex;
@@ -521,8 +502,6 @@ body {
   .gapkey { flex-basis: 100%; }
 }
 
-/* --- header row inside a readout: label + trend arrow --- */
-
 .readout__top {
   display: flex;
   align-items: center;
@@ -538,8 +517,6 @@ body {
 .readout__trend--rising { color: #e08a3c; }
 .readout__trend--falling { color: #4f9fd4; }
 .readout__trend--flat { color: var(--ink-dim); }
-
-/* --- min / avg / max / span --- */
 
 .stats {
   display: grid;
@@ -574,8 +551,6 @@ body {
   color: var(--ink-mid);
 }
 
-/* --- delta between sensors --- */
-
 .delta {
   display: flex;
   align-items: baseline;
@@ -608,8 +583,6 @@ body {
   font-size: 11px;
   color: var(--ink-dim);
 }
-
-/* --- hover readout --- */
 
 .hover {
   padding: 11px 14px 12px;
@@ -659,8 +632,6 @@ body {
   color: var(--ink-mid);
   font-variant-numeric: tabular-nums;
 }
-
-/* --- alert settings panel --- */
 
 .alerts-panel {
   display: flex;

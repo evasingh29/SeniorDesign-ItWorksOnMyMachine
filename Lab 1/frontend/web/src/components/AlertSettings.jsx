@@ -12,7 +12,7 @@ export default function AlertSettings({ unit }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [feedback, setFeedback] = useState(null) // { type: 'success' | 'error' | 'info', message: string }
+  const [feedback, setFeedback] = useState(null)
 
   const prevUnitRef = useRef(unit)
   const apiBase = getApiBaseUrl()

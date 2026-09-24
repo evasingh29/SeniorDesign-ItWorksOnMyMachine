@@ -34,7 +34,7 @@ export function recentTrend(values, window = 10) {
   const last = recent[recent.length - 1]
   const diff = last - first
 
-  // Threshold in °C: 0.1 °C change determines rising/falling
+  // threshold in °C: 0.1 °C change determines rising/falling
   if (diff > 0.1) return 'rising'
   if (diff < -0.1) return 'falling'
   return 'flat'

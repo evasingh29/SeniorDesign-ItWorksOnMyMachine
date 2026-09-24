@@ -12,36 +12,17 @@ import {
 import { UNIT_F, cToF, formatTemp, unitSymbol } from '../lib/temperature.js'
 
 /**
- * The x axis is "seconds ago": a fixed 0..300 domain that never moves. Samples
- * are placed by age, not by timestamp, so appending a sample shifts every
- * existing point one step left — the chart-recorder scroll — without us ever
+ * The x axis is "seconds ago": a fixed 0..300 domain that never moves.
+ * Samples are placed by age, not by timestamp, so appending a sample shifts every
+ * existing point one step left, the chart-recorder scroll, without us ever
  * touching the scale.
  *
  * Drawn reversed (300 on the left, 0 on the right) via uPlot's scale `dir`.
- */
-/**
- * x values are "seconds ago", stored ASCENDING (0 = newest, 299 = oldest).
- *
- * Ascending order is required: uPlot binary-searches this array to resolve the
- * cursor to an index, and that search assumes ascending x. A descending array
- * makes the search collapse to the endpoints, so the hover readout snaps
- * between the two extremes instead of tracking the pointer.
- *
- * The visual reversal (300 on the left, 0 on the right) is done by the scale's
- * `dir: -1`, not by the data order.
  */
 const X_AGES = Array.from({ length: HISTORY_SECONDS }, (_, i) => i)
 
 /**
  * Shades the spans where a trace has no data.
- *
- * This is the requirement that missing data must not be confusable with
- * off-scale data. A break in the line alone is ambiguous at a glance — it can
- * read as a flat segment or a rendering artifact — so every null run gets a
- * hatched band, tinted in that sensor's pen color so you can tell *which*
- * sensor is missing. Off-scale data still draws as a line clipped at the axis
- * bound, which looks nothing like hatching.
- *
  * Shading is per-sensor, not "all sensors missing": in practice the sensors
  * fail independently, so a shared-gap-only rule would leave the common case
  * (one sensor unplugged, the other fine) completely unmarked.
@@ -85,9 +66,7 @@ function gapShadingPlugin() {
 
         SENSOR_KEYS.forEach((key, s) => {
           const values = u.data[s + 1]
-          // Full-height bands, so a gap is unmissable at a glance. The hatch
-          // is tinted in the sensor's pen color to say which trace is out;
-          // overlapping gaps cross-hatch, which still reads as "no data".
+          // Full-height bands
           const bandTop = top
           const bandHeight = height
           const pattern = hatchFor(ctx, SENSOR_COLORS[key])
@@ -128,13 +107,11 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
   const tipAgeRef = useRef(null)
   const tipRowsRef = useRef(null)
 
-  // Kept in a ref so the axis formatter reads the current unit without the
-  // plot needing to be rebuilt.
   unitRef.current = unit
   onHoverRef.current = onHover
 
-  // Built exactly once. `data` is deliberately absent from the dependency
-  // array — including it would tear down and recreate the canvas every second.
+  // Built exactly once. 'data' is deliberately absent from the dependency
+  // array, including it would tear down and recreate the canvas every second.
   useEffect(() => {
     const series = [
       {},
@@ -149,12 +126,9 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
     ]
 
     const opts = {
-      // Without this, uPlot treats x values as Unix timestamps and prints 1970.
-      // Our x values are ages in seconds, so plain numbers are what we want.
       scales: {
         x: { time: false, range: [0, HISTORY_SECONDS - 1], dir: -1 },
-        // Hard bounds. A range function that ignores its arguments is the only
-        // way to guarantee uPlot never auto-scales, whatever the data does.
+        // Hard bounds
         y: { range: () => [Y_MIN_C, Y_MAX_C] },
       },
       axes: [
@@ -228,9 +202,6 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
 
             if (cb) cb({ secondsAgo, values, left: u.cursor.left })
 
-            // Tooltip: written straight to the DOM. Doing this through React
-            // state would re-render on every mouse move, and the chart's build
-            // effect must stay untouched.
             if (!tip) return
             const unitLabel = unitSymbol(unitRef.current)
 
@@ -253,8 +224,7 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
 
             tip.hidden = false
 
-            // Flip to the left of the cursor near the right edge so the
-            // tooltip never runs outside the plot area.
+            // Flip to the left of the cursor near the right edge so the tooltip never runs outside the plot area.
             const pad = 14
             const tipW = tip.offsetWidth
             const plotRight = u.bbox.left / devicePixelRatio + u.bbox.width / devicePixelRatio
@@ -298,21 +268,8 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
     const plot = plotRef.current
     if (!plot) return
 
-    // The buffer runs oldest -> newest; x runs newest (age 0) -> oldest
-    // (age 299), so the mapping reverses. A partially filled buffer (the live
-    // feed on startup) leaves the high-age end empty, which renders as blank
-    // space on the left rather than stretching the history it does have.
     const size = buffer.size
 
-    // Off-scale readings are clamped to the axis bounds so the trace pins flat
-    // against the top or bottom edge until it comes back in range, instead of
-    // vanishing outside the plot box. A break in the line has to mean exactly
-    // one thing -- no data -- and an unclamped excursion looks like one.
-    //
-    // Clamping happens HERE and not in the ring buffer: the buffer feeds the
-    // numeric readouts and the delta, which must keep reporting the measured
-    // value. A 61 C probe reads 61.0 on the panel while its trace sits on the
-    // 50 C ceiling.
     const rows = SENSOR_KEYS.map((key) => {
       const values = buffer.valuesFor(key)
       const row = new Array(HISTORY_SECONDS).fill(null)
@@ -335,7 +292,7 @@ export default function TemperatureChart({ buffer, tick, unit, onHover }) {
     <div className="chart-wrap">
       <div className="chart-canvas" ref={containerRef} />
       {/* Tooltip is written imperatively from the cursor hook below, so
-          following the pointer never re-renders this component. */}
+          following the pointer never re-renders this component, jsyk */}
       <div className="tip" ref={tipRef} hidden>
         <div className="tip__age" ref={tipAgeRef} />
         <div className="tip__rows" ref={tipRowsRef} />

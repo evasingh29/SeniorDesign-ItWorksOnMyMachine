@@ -2,9 +2,6 @@
  * Fake sensor feed. Emits exactly the payload the Python backend will send,
  * so nothing downstream can tell the difference.
  *
- * Shape of the signal: a slow random walk (the "real" temperature drifting)
- * plus independent per-sample noise (sensor jitter). Not a sine wave, which
- * reads as obviously synthetic on a chart recorder.
  */
 import { HISTORY_SECONDS } from '../lib/constants.js'
 
@@ -19,10 +16,6 @@ const SENSORS = [
   { key: 's2', center: 33.0, start: 34.1 },
 ]
 
-// Dropout rate, per sensor per sample. Tuned so a 300-second screen usually
-// shows about one gap per sensor: enough that the gap-shading path is visible
-// during the demo, few enough that the chart still reads as a working
-// instrument rather than a broken one.
 const DROPOUT_CHANCE = 1 / 320
 const DROPOUT_MIN = 4
 const DROPOUT_MAX = 9
@@ -32,7 +25,6 @@ function createWalker({ center, start }) {
   let dropoutLeft = 0
   return {
     step() {
-      // Ornstein-Uhlenbeck-ish: drift, but tethered so it can't wander off-scale.
       value += (Math.random() - 0.5) * 2 * WALK_STEP + (center - value) * PULL
 
       if (dropoutLeft > 0) {
@@ -68,15 +60,13 @@ export function createDummySource() {
       let btn1 = false
       let btn2 = false
 
-      // Pre-fill: replay HISTORY_SECONDS of backdated samples so the chart is
-      // full the moment it mounts rather than drawing in over five minutes.
       const now = Math.floor(Date.now() / 1000)
       for (let i = HISTORY_SECONDS - 1; i >= 0; i -= 1) {
         onSample(buildMessage(now - i, walkers, btn1, btn2))
       }
 
       const timer = setInterval(() => {
-        // Buttons toggle occasionally so the indicators aren't dead on screen.
+        // buttons toggle occasionally so the indicators aren't dead on screen.
         if (Math.random() < 0.02) btn1 = !btn1
         if (Math.random() < 0.02) btn2 = !btn2
         onSample(buildMessage(Math.floor(Date.now() / 1000), walkers, btn1, btn2))

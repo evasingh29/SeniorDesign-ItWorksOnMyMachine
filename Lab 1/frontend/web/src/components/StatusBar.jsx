@@ -1,6 +1,4 @@
 /**
- * Chassis status strip: link state, physical LCD controls, and feed info.
- *
  * "Offline" comes from the staleness timeout when no packets arrive.
  * Sensor 1 Display and Sensor 2 Display controls toggle the LCD lines on the physical box.
  */
