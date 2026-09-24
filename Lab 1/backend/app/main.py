@@ -72,7 +72,6 @@ async def broadcast_loop():
             sample = thermometer_state.record_tick(
                 threshold_seconds=settings.STALE_THRESHOLD_SECONDS
             )
-
             # Check temperature thresholds and trigger email alerts if configured
             alert_manager.check_sample_and_alert(sample)
 
