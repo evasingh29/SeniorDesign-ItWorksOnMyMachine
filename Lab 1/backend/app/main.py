@@ -65,12 +65,6 @@ manager = ConnectionManager()
 
 
 async def broadcast_loop():
-    """
-    Background worker running at 1 Hz that:
-    1. Records a 1-second sample into the 300-sample rolling history buffer.
-    2. Checks temperature thresholds and triggers email alerts if exceeded.
-    3. Broadcasts the live sample to connected WebSocket clients if box is online.
-    """
     logger.info("Starting WebSocket broadcast worker & rolling history recorder (1 Hz).")
     while True:
         try:

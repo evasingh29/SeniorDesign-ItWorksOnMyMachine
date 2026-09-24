@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createSource } from '../data/source.js'
 import { RingBuffer } from './ringBuffer.js'
-import { STALE_AFTER_MS } from './constants.js'
+import { HISTORY_SECONDS, STALE_AFTER_MS } from './constants.js'
 
 export function useThermometer() {
   const bufferRef = useRef(new RingBuffer())
@@ -15,6 +15,9 @@ export function useThermometer() {
   })
 
   const staleTimerRef = useRef(null)
+  const lastSampleTimeRef = useRef(Date.now())
+  const statusRef = useRef(status)
+  statusRef.current = status
 
   useEffect(() => {
     const resetStaleTimer = () => {
@@ -23,6 +26,11 @@ export function useThermometer() {
 
       staleTimerRef.current = setTimeout(() => {
         setStale(true)
+        setStatus((prev) => ({
+          ...prev,
+          s1: { ok: false, err: 'no signal' },
+          s2: { ok: false, err: 'no signal' },
+        }))
       }, STALE_AFTER_MS)
     }
 
@@ -31,6 +39,7 @@ export function useThermometer() {
       if (!sample) return
 
       resetStaleTimer()
+      lastSampleTimeRef.current = Date.now()
       bufferRef.current.push(sample)
 
       setStatus({
@@ -43,8 +52,41 @@ export function useThermometer() {
       setTick((t) => t + 1)
     })
 
+    // Heartbeat ticker:
+    // If the box stops sending data or is powered off, continue advancing
+    // the 300-second window once per second with missing/null samples.
+    const ticker = setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - lastSampleTimeRef.current
+
+      // If at least 1.2 seconds have elapsed since the last pushed sample,
+      // generate null/missing samples for the elapsed offline seconds.
+      if (elapsed >= 1200) {
+        const missedSeconds = Math.min(
+          Math.floor(elapsed / 1000),
+          HISTORY_SECONDS
+        )
+
+        const nowSec = Math.floor(now / 1000)
+        for (let i = missedSeconds - 1; i >= 0; i--) {
+          const offlineSample = {
+            ts: nowSec - i,
+            s1: { ok: false, err: 'no signal' },
+            s2: { ok: false, err: 'no signal' },
+            btn1: statusRef.current.btn1,
+            btn2: statusRef.current.btn2,
+          }
+          bufferRef.current.push(offlineSample)
+        }
+
+        lastSampleTimeRef.current += missedSeconds * 1000
+        setTick((t) => t + 1)
+      }
+    }, 500)
+
     return () => {
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current)
+      clearInterval(ticker)
       if (unsubscribe) unsubscribe()
     }
   }, [])
@@ -56,4 +98,3 @@ export function useThermometer() {
     stale,
   }
 }
-

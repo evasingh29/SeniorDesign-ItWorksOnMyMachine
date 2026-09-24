@@ -90,11 +90,7 @@ class EmailAlertManager:
         custom_message: str,
     ) -> Tuple[str, str, str]:
         """
-        Generate subject, plain text body, and HTML body clearly identifying:
-        1. Custom message configured for low/high alert.
-        2. Which sensor triggered the alert (Sensor 1/2 and hardware ROM address).
-        3. Whether it crossed min or max threshold.
-        4. Current temperature in Celsius (and Fahrenheit).
+        Generate subject, plain text body, and HTML body clearly
         """
         sensor_rom = (
             self.settings.SENSOR_1_ADDRESS if sensor_id == 1 else self.settings.SENSOR_2_ADDRESS
@@ -161,8 +157,7 @@ class EmailAlertManager:
         body_html: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
-        Connect to Gmail SMTP (smtp.gmail.com:587 with STARTTLS) and send an email.
-        Synchronous helper meant to run in a background thread.
+        Connect to Gmail SMTP and send an email.
         """
         app_password = self.settings.cleaned_app_password
         sender = self.settings.SMTP_SENDER
@@ -221,11 +216,8 @@ class EmailAlertManager:
 
     def check_sample_and_alert(self, sample: Dict[str, Any]) -> None:
         """
-        Evaluate a 1-second sample against threshold rules with state-transition semantics:
         - Sends ONE email when entering HIGH or LOW state.
         - Does not repeatedly send while remaining in HIGH or LOW.
-        - Resets back to NORMAL when temperature returns within bounds.
-        - Unplugged/missing sensors never trigger temperature alerts.
         - Maintains state independently for Sensor 1 and Sensor 2.
         """
         with self._lock:
