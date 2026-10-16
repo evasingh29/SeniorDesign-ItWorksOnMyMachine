@@ -47,7 +47,7 @@ class EventProcessor:
     def process(self, line):
         parsed = parse_line(line)
         if parsed is None:
-            LOG.warning("Ignored serial message: %r", line)
+            LOG.debug("Ignored serial diagnostic: %r", line)
             return
         kind, value = parsed
         if kind == "BREACH":

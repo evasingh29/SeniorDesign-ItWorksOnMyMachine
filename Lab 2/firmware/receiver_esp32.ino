@@ -5,11 +5,11 @@
     - LED (GPIO2) ON when the beam is broken, OFF when the transmitter beam is received
     - Ignores lamp IR noise: 3 digital band-pass filters, one per candidate range
         band 1 = 425-445 Hz, band 2 = 490-510 Hz, band 3 = 525-545 Hz
-    - Beam-break email alert (WiFi + Gmail SMTP), sent from a background task
+    - USB serial BREACH/CLEAR events; Python on the Mac sends Gmail notifications
     - Experiment data: CSV every 200 ms with all 3 band levels + measured peak frequency,
       and a full spectrum dump on request (works with log.py)
  
-  Library: "ESP Mail Client" by Mobizt (Arduino Library Manager)
+  Dependencies: ESP32 Arduino core only; no Wi-Fi/mail library or secrets header
   Board:   ESP32 Dev Module
  
   STARTUP: power up with the beam BLOCKED (lamp on if testing with lamp).
@@ -22,33 +22,14 @@
     r         : reset thresholds
     q         : toggle CSV logging
     s         : dump one full spectrum (freq_hz, amp_mV, amp_dB)
-    e         : toggle email alerts on/off
-    t         : send a test email
+    e / t     : print help for Python email controls (no synthetic beam events)
 */
  
-#include <WiFi.h>
-#include <ESP_Mail_Client.h>
-#include <time.h>
-#include <esp_timer.h>
-#include <esp_sntp.h>
+#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-#include "secrets.h"
- 
-// ===================== USER CONFIG =====================
+#include <freertos/task.h>
 
-
- 
-#define SMTP_HOST      "smtp.gmail.com"
-#define SMTP_PORT      465
-
-
-
- 
-#define GROUP_NAME     "Group 6"
-// Required lab message is the first line of every email body.
-#define ALERT_SUBJECT  "ECE4880 Lab 2 - Beam Break Detected"
- 
+// ===================== RECEIVER CONFIG =====================
 const int DEFAULT_BAND = 2;      // 1, 2 or 3 — set to the band your experiment identifies
  
 const int ADC_PIN = 34;          // ADC1 pin (ADC2 pins don't work with WiFi on)
@@ -113,7 +94,6 @@ float thrOn = 3.0f, thrOff = 2.0f;
 float noiseCal[3] = {-1, -1, -1}, sigCal[3] = {-1, -1, -1};
 bool calibratedOnce = false;
 bool beamBroken = true;          // assume blocked at boot
-bool armed = false;              // alerts only after the beam has been seen at least once
 uint32_t condSinceMs = 0;
  
 enum CalMode { CAL_NONE, CAL_NOISE, CAL_SIGNAL };
@@ -123,77 +103,6 @@ uint32_t calStartMs = 0;
 double calAccum[3] = {0, 0, 0};
 uint32_t calCount = 0;
  
-// ---------------- alerts ----------------
-// Only loop()/handleSerial() own these counters and the enable flag.
-bool alertsEnabled = true;
-uint32_t breachCount = 0, nextEventNumber = 0, queueOverflowCount = 0;
-const UBaseType_t ALERT_QUEUE_LENGTH = 16;
-const unsigned MAX_ALERT_ATTEMPTS = 4;
-const char* CENTRAL_TZ = "CST6CDT,M3.2.0,M11.1.0";
-struct AlertEvent {
-  uint32_t number;
-  uint32_t breachNumber;
-  int64_t detectedUs;       // 64-bit monotonic time, not wrapping millis()
-  time_t timestamp;         // zero until NTP mapping is available
-  uint8_t band;             // snapshot; worker never reads mutable activeBand
-  bool test;
-};
-// Explicit declarations keep Arduino auto-prototypes behind the custom type.
-bool resolveEventTime(AlertEvent& event);
-bool sendAlert(const AlertEvent& event);
-QueueHandle_t alertQueue = nullptr;
-// SNTP callback and both cores share only this clock mapping under a spinlock.
-portMUX_TYPE clockMux = portMUX_INITIALIZER_UNLOCKED;
-bool clockSynced = false;
-int64_t syncedEpochUs = 0;
-int64_t syncedMonoUs = 0;
-
-void onTimeSync(struct timeval* tv) {
-  if (tv->tv_sec < 1704067200LL) return; // reject dates before 2024
-  int64_t nowUs = esp_timer_get_time();
-  portENTER_CRITICAL(&clockMux);
-  syncedEpochUs = int64_t(tv->tv_sec) * 1000000LL + tv->tv_usec;
-  syncedMonoUs = nowUs;
-  clockSynced = true;
-  portEXIT_CRITICAL(&clockMux);
-}
-
-bool resolveEventTime(AlertEvent& event) {
-  if (event.timestamp != 0) return true; // freeze across all delivery retries
-  portENTER_CRITICAL(&clockMux);
-  bool valid = clockSynced;
-  int64_t epochUs = syncedEpochUs;
-  int64_t referenceUs = syncedMonoUs;
-  portEXIT_CRITICAL(&clockMux);
-  if (!valid) return false;
-  // Can back-date a pre-sync event within this boot using its monotonic time.
-  time_t candidate = (epochUs + event.detectedUs - referenceUs) / 1000000LL;
-  if (candidate < 1704067200LL) return false;
-  event.timestamp = candidate;
-  return true;
-}
-
-void queueAlert(bool test) {
-  AlertEvent event = {};
-  event.number = ++nextEventNumber;
-  event.breachNumber = breachCount;
-  event.detectedUs = esp_timer_get_time();
-  event.band = activeBand;
-  event.test = test;
-  resolveEventTime(event); // no waits and no network in the sampling task
-  if (!alertQueue || xQueueSend(alertQueue, &event, 0) != pdPASS) {
-    ++queueOverflowCount;
-    Serial.printf("# ALERT QUEUE OVERFLOW: event=%lu type=%s rejected total=%lu\n",
-                  (unsigned long)event.number, test ? "TEST" : "BREACH",
-                  (unsigned long)queueOverflowCount);
-    return;
-  }
-  Serial.printf("# alert queued event=%lu type=%s breach=%lu time=%s\n",
-                (unsigned long)event.number, test ? "TEST" : "BREACH",
-                (unsigned long)event.breachNumber,
-                event.timestamp ? "NTP valid" : "waiting for NTP");
-}
-
 // ---------------- spectrum ----------------
 float bufA[N_BLOCK], bufB[N_BLOCK];
 float* fillBuf = bufA;
@@ -251,11 +160,10 @@ void handleSerial() {
       case 'q': logCsv = !logCsv; break;
       case 's': spectrumRequest = true; break;
       case 'e':
-        alertsEnabled = !alertsEnabled;
-        Serial.printf("# email alerts %s\n", alertsEnabled ? "ON" : "OFF");
+        Serial.println("# Email runs on the Mac; start/stop Python to enable/disable delivery");
         break;
       case 't':
-        queueAlert(true); // explicit test works even when automatic alerts are off
+        Serial.println("# Test email on Mac: python main.py --test-email (no beam event emitted)");
         break;
     }
   }
@@ -332,103 +240,6 @@ void analysisTask(void*) {
   }
 }
  
-// ---------------- email (core 0, never blocks sampling) ----------------
-bool ensureWiFi(uint32_t timeoutMs) {
-  if (WiFi.status() == WL_CONNECTED) return true;
-  WiFi.reconnect();
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < timeoutMs) vTaskDelay(pdMS_TO_TICKS(100));
-  return WiFi.status() == WL_CONNECTED;
-}
- 
-bool sendAlert(const AlertEvent& event) {
-  struct tm local;
-  if (!event.timestamp || !localtime_r(&event.timestamp, &local)) return false;
-  char required[100];
-  snprintf(required, sizeof(required),
-           "Critical Safety Event at %02d:%02d %s on %02d/%02d/%04d",
-           local.tm_hour % 12 ? local.tm_hour % 12 : 12, local.tm_min,
-           local.tm_hour < 12 ? "AM" : "PM",
-           local.tm_mon + 1, local.tm_mday, local.tm_year + 1900);
-  String body = String(required) + "\n" +
-                "Type: " + (event.test ? "TEST - not a beam interruption" : "BEAM INTERRUPTION") + "\n" +
-                "Group: " + GROUP_NAME + "\n" +
-                "Event #: " + String(event.number) + "\n" +
-                "Breach #: " + String(event.breachNumber) + "\n" +
-                "Detection band: " + bands[event.band].name + " Hz\n";
-
-  SMTPSession smtp;
-  Session_Config config;
-  config.server.host_name = SMTP_HOST;
-  config.server.port = SMTP_PORT;
-  config.login.email = AUTHOR_EMAIL;
-  config.login.password = AUTHOR_APP_PW;
-  config.login.user_domain = "";
-
-  SMTP_Message message;
-  message.sender.name = GROUP_NAME;
-  message.sender.email = AUTHOR_EMAIL;
-  message.subject = event.test ? "ECE4880 Lab 2 - TEST email" : ALERT_SUBJECT;
-  message.addRecipient("Recipient", RECIPIENT);
-  message.text.content = body.c_str();
-
-  // Never enable SMTP debug or print server responses/credentials.
-  if (!smtp.connect(&config)) {
-    Serial.printf("# email failed event=%lu stage=SMTP connect\n", (unsigned long)event.number);
-    smtp.closeSession();
-    return false;
-  }
-  bool sent = MailClient.sendMail(&smtp, &message);
-  smtp.closeSession();
-  Serial.printf("# email %s event=%lu type=%s\n", sent ? "sent" : "failed",
-                (unsigned long)event.number, event.test ? "TEST" : "BREACH");
-  return sent;
-}
-
-void alertTask(void*) {
-  // Central timezone is configured once before any event is formatted.
-  sntp_set_time_sync_notification_cb(onTimeSync);
-  configTzTime(CENTRAL_TZ, "pool.ntp.org", "time.nist.gov");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  MailClient.networkReconnect(true);
-  Serial.println("# alert worker ready; WiFi/NTP will be checked before delivery");
-
-  for (;;) {
-    AlertEvent event;
-    if (xQueueReceive(alertQueue, &event, portMAX_DELAY) != pdTRUE) continue;
-    bool delivered = false;
-    for (unsigned attempt = 1; attempt <= MAX_ALERT_ATTEMPTS; ++attempt) {
-      if (attempt > 1) {
-        uint32_t backoffMs = 2000UL << (attempt - 2); // 2, 4, 8 seconds
-        Serial.printf("# retry event=%lu attempt=%u/%u backoff_ms=%lu\n",
-                      (unsigned long)event.number, attempt, MAX_ALERT_ATTEMPTS,
-                      (unsigned long)backoffMs);
-        vTaskDelay(pdMS_TO_TICKS(backoffMs));
-      }
-      if (!ensureWiFi(5000)) {
-        Serial.printf("# email failed event=%lu attempt=%u reason=WiFi unavailable\n",
-                      (unsigned long)event.number, attempt);
-        continue;
-      }
-      uint32_t start = millis();
-      while (!resolveEventTime(event) && millis() - start < 5000)
-        vTaskDelay(pdMS_TO_TICKS(100));
-      if (!event.timestamp) {
-        Serial.printf("# email failed event=%lu attempt=%u reason=NTP time invalid (not sent)\n",
-                      (unsigned long)event.number, attempt);
-        continue;
-      }
-      Serial.printf("# delivery attempt event=%lu attempt=%u/%u\n",
-                    (unsigned long)event.number, attempt, MAX_ALERT_ATTEMPTS);
-      if (sendAlert(event)) { delivered = true; break; }
-    }
-    if (!delivered)
-      Serial.printf("# email failed FINAL event=%lu type=%s after=%u attempts; next event retained\n",
-                    (unsigned long)event.number, event.test ? "TEST" : "BREACH", MAX_ALERT_ATTEMPTS);
-  }
-}
-
 // ======================================================================
 void setup() {
   Serial.setTxBufferSize(4096);
@@ -455,15 +266,6 @@ void setup() {
   }
  
   xTaskCreatePinnedToCore(analysisTask, "analysis", 8192, NULL, 1, &analysisHandle, 0);
-  alertQueue = xQueueCreate(ALERT_QUEUE_LENGTH, sizeof(AlertEvent));
-  if (!alertQueue) {
-    Serial.println("# FATAL notifications unavailable: queue allocation failed; sampling continues");
-  } else if (xTaskCreatePinnedToCore(alertTask, "alert", 16384, NULL, 1, NULL, 0) != pdPASS) {
-    vQueueDelete(alertQueue);
-    alertQueue = nullptr;
-    Serial.println("# FATAL notifications unavailable: task allocation failed; sampling continues");
-  }
- 
   Serial.printf("# detection band %d (%s Hz)\n", activeBand + 1, bands[activeBand].name);
   Serial.println("# t_ms,peak_tx_hz,peak_tx_mV,peak_all_hz,peak_all_mV,rms_adc_mV,rms_opamp_mV,"
                  "env_425_445,env_490_510,env_525_545,active_band,beam_broken,adc_min,adc_max,missed");
@@ -529,13 +331,10 @@ void loop() {
       digitalWrite(LED_PIN, beamBroken ? HIGH : LOW);
       Serial.printf("# %lu ms: beam %s\n", (unsigned long)now, beamBroken ? "BROKEN" : "PRESENT");
  
-      if (!beamBroken) {
-        armed = true;
-      } else if (armed) {
-        ++breachCount;
-        Serial.printf("# breach detected breach=%lu alerts=%s\n",
-                      (unsigned long)breachCount, alertsEnabled ? "ON" : "OFF");
-        if (alertsEnabled) queueAlert(false);
+      if (beamBroken) {
+        Serial.println("BREACH");
+      } else {
+        Serial.println("CLEAR");
       }
     }
   }

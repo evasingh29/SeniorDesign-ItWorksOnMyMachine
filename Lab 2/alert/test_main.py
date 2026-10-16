@@ -172,3 +172,35 @@ class GmailTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 1)
         self.assertNotIn('sensitive-server-response', '\n'.join(logs.output))
         send.assert_called_once()
+
+
+class ESP32IntegrationTests(unittest.TestCase):
+    def test_csv_spectrum_and_help_never_trigger_or_clear_a_breach(self):
+        sender = Mock()
+        processor = EventProcessor(sender, lambda: datetime(2026, 10, 16, 13, 20))
+        diagnostics = ['# 1200 ms: beam BROKEN', '# BREACH is only a help word',
+                       '1200,500.0,12.5,500.0,12.5,8.0,16.0,1.0,2.0,3.0,2,1,10,4000,0',
+                       '# SPECTRUM_BEGIN freq_hz,amp_mV_at_adc,amp_dB_re_1mV',
+                       '500.0,12.500,21.94', '# SPECTRUM_END', '# 1500 ms: beam PRESENT']
+        with self.assertNoLogs('main', level='WARNING'):
+            for line in diagnostics:
+                processor.process(line)
+        sender.submit.assert_not_called()
+        processor.process('BREACH')
+        for line in diagnostics:
+            processor.process(line)
+        processor.process('BREACH')
+        self.assertTrue(processor.active)
+        self.assertEqual(sender.submit.call_count, 1)
+        processor.process('CLEAR')
+        processor.process('BREACH')
+        self.assertEqual(sender.submit.call_count, 2)
+
+    def test_keyboard_simulation_rearms_without_hardware(self):
+        from main import simulate
+        sender = Mock()
+        processor = EventProcessor(sender)
+        with patch('builtins.input', side_effect=['b','b','c','b','q']), \
+                patch('builtins.print'):
+            simulate(processor)
+        self.assertEqual(sender.submit.call_count, 2)
