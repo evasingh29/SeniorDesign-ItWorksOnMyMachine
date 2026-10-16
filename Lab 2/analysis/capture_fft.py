@@ -1,6 +1,7 @@
 """Grab a burst of samples from capture.ino and find the dominant frequencies.
 
-Run these commands from Lab 2/. Live capture requires the missing capture.ino:
+Run these commands from Lab 2/. Live capture requires supporting firmware/capture.ino
+on a classic AVR Uno/Nano (not the primary ESP32 receiver):
     python analysis/capture_fft.py --label transmitter_30cm
     python analysis/capture_fft.py --port /dev/cu.usbmodem14101 --label lamp
 

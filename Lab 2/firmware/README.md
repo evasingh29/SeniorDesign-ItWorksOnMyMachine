@@ -15,7 +15,7 @@ upload (Serial Monitor is useful for checkoff diagnostics).
 3. Arduino requires a sketch folder matching its primary `.ino` name. Copy
    `receiver_esp32.ino` and the local `secrets.h` into a separate local folder named
    `receiver_esp32`, then open `receiver_esp32/receiver_esp32.ino`. Keep only that
-   `.ino` in the sketch folder; do not combine it with `receiver.ino`. After edits,
+   `.ino` in the sketch folder; do not combine it with `receiver.ino` or supporting `capture.ino`. After edits,
    refresh the copy from this repository. Keep copied secrets outside version control.
 4. Verify, upload, and open Serial Monitor at **115200 baud**.
 

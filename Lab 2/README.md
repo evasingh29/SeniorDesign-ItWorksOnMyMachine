@@ -16,9 +16,38 @@ See the [firmware setup and checkoff guide](firmware/README.md).
 | `firmware/` | Arduino `.ino` implementations and filter coefficient headers |
 | `alert/` | Python serial notification software, configuration examples, and tests |
 
-Three of Elif's emailed files are now present: `matlab/design_filter.m`,
-`matlab/write_coeffs_header.m`, and `analysis/capture_fft.py`. The FFT script was
-moved from `matlab/` into `analysis/`. No `elif_original/` folder is used.
+Elif's supporting files are now present: `firmware/capture.ino`,
+`firmware/filter_coeffs.h`, `matlab/design_filter.m`, `matlab/write_coeffs_header.m`,
+and `analysis/capture_fft.py`. They remain separate from the primary ESP32 design.
+No `elif_original/` folder is used.
+
+## Which firmware to upload
+
+**For the team's actual ESP32 hardware, upload only `receiver_esp32.ino` using
+ESP32 Dev Module.** Its existing ADC GPIO 34, 4000 Hz sampling, three filters,
+calibration, LED GPIO 2, and direct Gmail pipeline remain unchanged. None of
+Elif's ADC/register code or coefficients are incorporated into this sketch.
+
+`capture.ino` is optional bench capture firmware for a **classic ATmega328P Arduino
+Uno/Nano**. It samples A0 at a nominal 10000 Hz, stores 1200 samples quantized to
+8 bits, and prints them expanded back onto a 10-bit scale. The ADC reference is
+assumed to be nominal 5 V by the Python tool; actual voltage accuracy requires
+reference measurement. The ADC prescaler is configured with AVR-only registers;
+this sketch is not an ESP32 implementation. It now includes `Arduino.h` explicitly
+and rejects other MCUs with a clear compile-time error. Its sampling behavior is
+otherwise unchanged. Measured sample timing still needs hardware validation.
+
+Each selected Arduino sketch needs its own matching folder and only one `.ino`:
+
+- Primary: a local `receiver_esp32/` folder containing `receiver_esp32.ino` and
+  local `secrets.h`; follow [the firmware guide](firmware/README.md).
+- Supporting AVR capture: a separate local `capture/` folder containing only
+  `capture.ino`, compiled for **Arduino Uno** or classic Nano as appropriate.
+
+Do not open the entire `firmware/` directory as one sketch. Arduino combines `.ino`
+files in a sketch, which would produce duplicate `setup()` and `loop()` definitions
+and mix incompatible board APIs. This repository groups source by function, not
+as a single compilable Arduino sketch folder.
 
 ## MATLAB design and FFT analysis
 
@@ -62,17 +91,27 @@ python3 analysis/capture_fft.py --csv /absolute/path/to/capture.csv --no-plot
 `--no-plot` suppresses the interactive window but still writes a PNG and therefore
 still requires Matplotlib.
 
-## Missing files and integration limits
+## Supporting protocol, coefficients, and missing files
 
-- **`capture.ino` is missing.** Live FFT capture expects a `c` command followed by
-  `BEGIN <sample_rate> <count>`, one raw integer sample per line, and `END`. The
-  current ESP32 receiver's CSV/spectrum protocol is different; do not upload or
-  modify the active firmware merely to satisfy this script.
-- **Elif's nonempty receiver implementation is missing.** The existing
-  `firmware/receiver.ino` remains an empty placeholder.
-- **`filter_coeffs.h` is absent.** The corrected MATLAB writer can produce it
-  under `firmware/` after the design is reviewed and MATLAB is run; no placeholder
-  coefficients have been invented. The active ESP32 firmware does not consume it.
+- **Capture firmware is present and independent of the receiver.** The Python
+  tool sends `c`, then reads `BEGIN <sample_rate> <count>`, one raw integer sample
+  per line, and `END`. The supplied sketch implements this format at 115200 baud.
+  Neither file needs `filter_coeffs.h` or Elif's original receiver. The ESP32's
+  existing CSV/spectrum format is different and is not an input to this tool.
+- **Elif's nonempty receiver implementation is still missing.** The existing
+  `firmware/receiver.ino` remains a zero-byte placeholder and has not been changed.
+- **`filter_coeffs.h` is present.** It defines `FS=3000`, `NUM_SECTIONS=2`, and a
+  two-row `SOS` coefficient array for an alternative 450–550 Hz bandpass. Static
+  float32 checks find a maximum pole radius of about 0.931618 (stable), near-unity
+  gain at 500 Hz, and about -3.01 dB at 450/550 Hz. This checks the supplied numbers,
+  not a MATLAB regeneration or measured response. Neither current sketch includes
+  this header. It must not replace the ESP32's three 4000 Hz filters.
+- **MATLAB generation is separate from the primary firmware.** The writer's
+  script-relative destination is `firmware/filter_coeffs.h`, matching the supplied
+  header's `FS`, `NUM_SECTIONS`, and `SOS` schema. Default design settings match the
+  header description, but reproducing its numbers requires MATLAB and Signal
+  Processing Toolbox. Running the writer overwrites the supplied generated header;
+  review changes before use. No coefficients were generated during this validation.
 - **Elif's separate notification files have not been supplied.** Existing
   `alert/main.py`, `notifier.py`, and `formatter.py` are the current Python
   subsystem, so a teammate-notifier comparison/merge remains pending.
@@ -133,6 +172,86 @@ python3 -m unittest discover -s 'Lab 2/firmware/tests' -v
 ```
 
 The firmware tests compile extracted notification/detection code against mocked
-host APIs; they are not an Arduino/ESP32 build or a hardware test. MATLAB execution requires MATLAB and Signal Processing Toolbox, which are not
-available in this session; the missing alternative firmware cannot be tested. Live
-receiver and email testing instructions are in the component READMEs.
+host APIs; they are not an Arduino/ESP32 build or a hardware test. MATLAB execution requires MATLAB and Signal Processing Toolbox, unavailable in
+this session. The bundled Arduino IDE CLI and installed Arduino AVR core/toolchain
+can validate supporting capture firmware. The ESP32 core and ESP Mail Client are
+not installed in the inspected standard locations, so primary firmware compilation
+and hardware/email testing remain unverified. Live receiver and email testing
+instructions are in the component READMEs.
+
+### File roles
+
+| Source | Role / dependencies |
+| --- | --- |
+| `firmware/receiver_esp32.ino` | **Primary** ESP32 receiver; ESP32 core, Wi-Fi, FreeRTOS, ESP Mail Client, local credentials |
+| `firmware/capture.ino` | Supporting ATmega328P raw capture; Arduino AVR core only |
+| `firmware/receiver.ino` | Empty placeholder; not uploadable as a working receiver |
+| `firmware/filter_coeffs.h` | Supporting generated SOS header; currently unused by either nonempty sketch |
+| `firmware/secrets.example.h` | Safe credential template; copy locally to ignored `secrets.h` |
+| `matlab/design_filter.m` | Supporting Butterworth design/plots; MATLAB Signal Processing Toolbox |
+| `matlab/write_coeffs_header.m` | Supporting coefficient export; MATLAB |
+| `analysis/capture_fft.py` | Supporting capture/FFT/plots; NumPy, Matplotlib, pyserial |
+| `alert/main.py` | Optional serial notification path; pyserial and optional python-dotenv |
+| `alert/notifier.py` | Optional Python background console/Gmail/ntfy delivery; standard library |
+| `alert/formatter.py` | Optional Python alert text formatter; standard library |
+| `alert/test_main.py`, `alert/test_formatter.py` | Notification/parser/formatter unit tests with mocked transports |
+| `firmware/tests/test_notifications.py` | Primary notification host tests with fake ESP32/SMTP APIs and a host C++ compiler |
+
+The optional Python alert path is not required by the primary ESP32 firmware.
+The existing ESP32 spectrum/CSV functionality already supplies spectral diagnostics;
+no supporting capture or coefficient functionality was merged into primary firmware.
+
+### Reproducible diagnostic causes
+
+- `capture.ino` uses `ADCSRA`, `ADPS2`, `ADPS1`, `ADPS0`, `_SFR_BYTE`, and `_BV`.
+  These AVR definitions are unavailable in ESP32 board headers. A0 is also a
+  board-specific pin alias. Several editor errors can share this one board/core
+  mismatch; their exact count cannot be established from source alone.
+- Arduino automatically supplies core declarations during normal sketch builds.
+  Generic C++ IntelliSense without board include paths can flag `Serial`, `micros`,
+  `analogRead`, and `uint8_t` even when an Uno build succeeds. An explicit
+  `Arduino.h` include helps identify the dependency but does not install/configure it.
+- Primary ESP32 dependencies such as `WiFi.h`, `ESP_Mail_Client.h`, `esp_timer.h`,
+  `esp_sntp.h`, and FreeRTOS headers require the selected ESP32 core and mail library.
+  Unresolved headers in a generic host build are not proof of C++ logic errors.
+- `capture_fft.py` expects nominal 5 V/10-bit capture samples, not ESP32 12-bit ADC
+  values. Its `--no-plot` flag still requires Matplotlib because it saves a PNG.
+- The active receiver's spectrum buffers/shared analysis state are preserved.
+  Their real-time behavior, including possible buffer reuse if analysis takes too
+  long, is not verified by notification host tests. Monitor the CSV `missed` count
+  during network tests rather than treating host tests as an ADC timing guarantee.
+
+### Validation from this inspection
+
+- All **15 Python alert tests** and **2 primary notification host tests** passed.
+- All seven Lab 2 Python sources parsed successfully.
+- `capture.ino` passed an actual **Arduino Uno build** using bundled Arduino CLI
+  1.3.1, Arduino AVR core 1.8.7, and the installed AVR toolchain: **2068 bytes flash,
+  1422 bytes RAM**, with 626 bytes RAM remaining. No upload was performed.
+- AVR compiler syntax checks passed with the Uno target; an unsupported MCU
+  correctly triggered the explicit board guard. This does not reproduce the exact
+  editor Problems list or prove ESP32 compilation.
+- The supplied SOS header passed host C++ syntax checks and float32 pole/response
+  checks. It was preserved without regeneration.
+- `analyze()` recovered a 500 Hz sinusoid and the expected nominal amplitude from
+  synthetic 10000 Hz / 1200-sample input using Anaconda's installed NumPy. These
+  are simulated samples, not transmitter measurements or physical test results.
+- The current `python3` lacks NumPy, Matplotlib, pyserial, and python-dotenv.
+  Anaconda has NumPy and Matplotlib but lacks pyserial. Select/configure the intended
+  interpreter before live Python capture; mock-based tests do not establish that
+  these runtime dependencies are installed. For the supporting analysis tool,
+  install `numpy matplotlib pyserial` into its selected virtual environment.
+- MATLAB/Octave are unavailable. MATLAB generation was inspected but not executed.
+  The installed Arduino packages include AVR and Renesas Uno, but no ESP32 core;
+  ESP Mail Client was not found in the standard sketchbook library directory.
+- `secrets.h` and `.env` are ignored and not tracked. A heuristic scan of nonignored
+  Lab 2 source found no candidate hardcoded passwords/tokens. No credentials were
+  read from local secret files or displayed, and no files were staged.
+
+Before physical checkoff, install/select the ESP32 core and ESP Mail Client as
+explained in the firmware guide, compile/upload only the primary ESP32 sketch,
+configure local credentials, and test NTP/Central timestamps, one `t` test email,
+one interruption/restoration, two interruptions less than ten seconds apart,
+continuous blockage, and Wi-Fi failure/recovery. Verify LED/calibration/CSV/spectrum
+behavior and sampling deadlines during delivery. Neither the Uno build nor host
+tests establish primary ESP32 compilation, email receipt, or hardware performance.

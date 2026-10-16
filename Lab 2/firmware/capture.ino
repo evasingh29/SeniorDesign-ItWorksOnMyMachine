@@ -1,9 +1,9 @@
 // Lab 2 capture sketch
 // Records a burst of raw samples from A0 at a fixed rate and dumps them over serial,
-// so tools/capture_fft.py can plot them and find the frequency of whatever the
+// so analysis/capture_fft.py can plot them and find the frequency of whatever the
 // photodiode is seeing (transmitter, lamp, phone flashlight, ...).
 //
-// Usage: open with tools/capture_fft.py (it sends 'c' and reads the result).
+// Usage: open with analysis/capture_fft.py (it sends 'c' and reads the result).
 // Manual use: Serial Monitor at 115200, type c and press Enter.
 //
 // Output format:
@@ -11,6 +11,13 @@
 //   <sample 0..1023>   (one per line)
 //   ...
 //   END
+
+// Supporting firmware for classic ATmega328P Uno/Nano boards only.
+// Primary team hardware must run receiver_esp32.ino instead.
+#include <Arduino.h>
+#if !defined(__AVR_ATmega328P__)
+#error "capture.ino requires a classic ATmega328P Uno/Nano; use receiver_esp32.ino on ESP32"
+#else
 
 #ifndef cbi
 #define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
@@ -60,3 +67,5 @@ void loop() {
     if (c == 'c' || c == 'C') capture();
   }
 }
+
+#endif // __AVR_ATmega328P__
