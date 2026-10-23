@@ -1,98 +1,140 @@
-# Lab 2 checkoff: ESP32 → USB serial → Python → Gmail
+# Lab 2 — Robust Electric Eye
 
-**Upload `firmware/receiver_esp32.ino` to the ESP32. Run `alert/main.py` on the Mac.**
-The ESP32 retains Aspyn's ADC GPIO 34, 4000 Hz sampling, three band-pass filters,
-calibration, thresholds, 60 ms debounce, LED GPIO 2, CSV, and spectrum analysis.
-It prints `BREACH` / `CLEAR` at 115200 baud; it needs no Wi-Fi, ESP Mail Client,
-NTP, Gmail credentials, or `secrets.h`. Python timestamps received events and
-sends Gmail in the background. Keep the Mac awake, connected to USB and internet.
+ECE:4880 Capstone Senior Design. The ESP32 detects interruption of a modulated
+light beam and sends USB serial events to a Python program on the host computer,
+which timestamps events and sends email alerts.
 
-## Upload
+## Submission files
 
-1. Arduino IDE → Boards Manager → install **esp32 by Espressif Systems**.
-2. Copy **only** `firmware/receiver_esp32.ino` into a local folder named
-   `receiver_esp32`, then open that sketch. Do not combine the other `.ino` files.
-3. Select **ESP32 Dev Module**, select the USB port, Verify, and Upload.
-4. Close Serial Monitor before starting Python; only one program may own the port.
+| Path | Purpose |
+| --- | --- |
+| `firmware/receiver_esp32.ino` | Working ESP32 receiver: filtering, calibration, LED, serial events, diagnostics |
+| `alert/main.py` | Serial connection, event handling, simulation, and email test |
+| `alert/notifier.py`, `alert/formatter.py` | Notification delivery and alert formatting |
+| `alert/requirements.txt` | Python runtime dependencies |
+| `alert/test_*.py`, `firmware/tests/` | Automated host tests |
+| `firmware/capture.ino`, `analysis/capture_fft.py` | Separate AVR capture and FFT tools for transmitter experiments |
+| `matlab/*.m`, `firmware/filter_coeffs.h` | Alternative 3000 Hz filter design/export; unused by the ESP32 receiver |
 
-## Start Python (from repository root)
+## Receiver setup
+
+Install **esp32 by Espressif Systems** in Arduino IDE Boards Manager. Copy only
+`firmware/receiver_esp32.ino` into a sketch folder named `receiver_esp32`, select
+**ESP32 Dev Module** and the USB port, then Verify and Upload. The separate AVR
+capture sketch must stay outside that sketch folder.
+
+The receiver uses ADC **GPIO 34**, LED **GPIO 2**, and **4000 Hz** sampling.
+LED ON indicates a broken beam; OFF indicates a received beam. A 160 Hz high-pass
+stage suppresses low-frequency interference, followed by three selectable
+band-pass channels: **425–445**, **490–510**, and **525–545 Hz** (nominal ranges;
+the code scales each section's bandwidth by 1.5). Band 2 is selected by default.
+Noise calibration, separate ON/OFF thresholds, and **60 ms debounce** stabilize
+detection. Confirm the appropriate band with measurements of the actual transmitter.
+
+Start with the beam **blocked** (lamp on when testing lamp interference). Reset
+after Python connects, allow about **2.5 seconds** for noise calibration, then
+unblock the beam before testing interruptions.
+
+| Serial command (115200 baud) | Action |
+| --- | --- |
+| `1`, `2`, `3` | Select detection band |
+| `b`, `p`, `r` | Calibrate noise, calibrate signal, reset thresholds |
+| `q`, `s` | Toggle CSV output, dump spectrum |
+| `e`, `t` | Display Python email instructions |
+
+The receiver emits newline-terminated `BREACH` and `CLEAR` transitions. Diagnostic
+comments, CSV, and spectrum output do not trigger alerts. Close Serial Monitor
+before starting Python so the serial port is available.
+
+## Email setup and operation
+
+From the repository root:
 
 ```sh
 cd 'Lab 2/alert'
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-cp -n .env.example .env
-chmod 600 .env
 ```
 
-Edit `.env` locally: `ALERT_CHANNELS=smtp`, `SMTP_HOST=smtp.gmail.com`,
-`SMTP_PORT=465`, `SMTP_SECURITY=ssl`, your Gmail in `SMTP_FROM` and
-`SMTP_USERNAME`, recipient in `SMTP_TO`, and a **Google App Password** in
-`SMTP_PASSWORD`. Never use your normal Google password or paste credentials
-into terminal commands. `.env` is ignored. Existing exported variables override it.
+Create `alert/.env` (relative to Lab 2) with the following settings, filling in
+addresses and a Google App Password locally:
+
+```dotenv
+ALERT_CHANNELS=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_FROM=your-address@gmail.com
+SMTP_USERNAME=your-address@gmail.com
+SMTP_TO=recipient@example.com
+SMTP_PASSWORD=
+```
+
+Use a Google App Password rather than the account password. `.env` is ignored;
+exported environment variables override its values. Keep credentials out of the
+submission. Run `chmod 600 .env` from `alert/` after creating it.
+
+Run these commands from `Lab 2/alert` with the virtual environment active:
 
 ```sh
-# One real email without hardware (configure .env first):
+# One real email without hardware:
 TZ=America/Chicago python main.py --test-email
 
-# Offline keyboard simulation: b, b, c, b, q → two alerts
+# Offline simulation: b, b, c, b, q should produce two console alerts:
 TZ=America/Chicago ALERT_CHANNELS=console python main.py --simulate
 
-# List ports, then start Gmail notifications (replace the example port):
+# Find the port, then replace the example with the actual device:
 python main.py --list-ports
-TZ=America/Chicago ALERT_CHANNELS=smtp python main.py --port /dev/cu.usbserial-0001
+TZ=America/Chicago python main.py --port /dev/cu.usbserial-0001
 ```
 
-Or omit `--port` for automatic discovery when exactly one USB device is present.
-On later runs, just `cd 'Lab 2/alert'`, `source .venv/bin/activate`, and run the
-last command. `--simulate` without the console override uses configured delivery,
-so typing `b` can send a real Gmail alert without hardware. Ctrl-C stops Python.
+Omit `--port` for discovery when exactly one USB device is present, or set
+`SERIAL_PORT` in `.env`. Keep the host awake, connected to USB and the internet.
+Ctrl-C stops the program. Simulation without the console override uses configured
+delivery and can send real email.
 
-## Checkoff
+The subject and body use the host's receive time, for example:
+`Critical Safety Event at 01:20 PM on 10/16/2026`.
+The clock and date are zero-padded, with a 12-hour clock and AM/PM.
 
-Start with the beam **blocked** (lamp on), reset the ESP32 after Python connects,
-and wait ~2.5 seconds for noise calibration. Unblock, then:
+A continuous blockage produces one alert. `CLEAR` rearms detection immediately;
+there is no notification cooldown. Email runs in a background worker. Each event
+gets one attempt per configured channel, with success/failure recorded in the
+terminal and ignored `alert/alert.log`. There are no automatic delivery retries
+or durable queues. Serial reconnects preserve event state until `CLEAR`, but
+transitions during disconnection cannot be recovered. Shutdown allows up to
+35 seconds for queued delivery.
 
-1. Block → LED ON, `BREACH`, one email. Hold blocked >10 seconds: no repeats.
-2. Restore → LED OFF, `CLEAR`. Block again within 10 seconds: another email.
-3. Confirm subject/body format: `Critical Safety Event at 01:20 PM on 10/16/2026`
-   (actual Central receive time; zero-padded 12-hour clock/date and AM/PM).
-4. Check Python's terminal and ignored `alert/alert.log` for delivery success/failure.
+## Verification and report evidence
 
-`1/2/3`, `b/p/r`, `q`, and `s` still control the receiver. `e/t` now print help
-for the Mac email controls and never fabricate a beam event. Perform calibration
-commands in Serial Monitor before closing it and starting Python; a reset triggers
-automatic noise calibration again. CSV/spectrum diagnostics never trigger email.
-A disconnected Mac misses transitions; active Python state persists across reconnects
-until `CLEAR`. Network failure is logged; existing sends are attempted once per event
-without automatic retries. Pending deliveries are in memory, not durable storage.
+1. Start Python, reset with the beam blocked, wait for calibration, then unblock.
+2. Block: expect LED ON, `BREACH`, and one email. Hold longer than ten seconds
+   and confirm no repeats.
+3. Restore: expect LED OFF and `CLEAR`. Block again within ten seconds and
+   confirm another email with the required timestamp format. Check inbox/spam.
+4. Repeat under ambient lighting and interfering sources; record conditions,
+   distances, selected band, latency, and missed or false detections.
 
-## Files
+The lab report must describe experiments on the provided transmitter and the
+observed results, justify the filter specification from those measurements, and
+report receiver selectivity and alert behavior. This repository does not supply
+measured results; use the team's actual observations.
 
-| Folder / file | Role |
-| --- | --- |
-| `firmware/receiver_esp32.ino` | **Primary** ESP32 detection and serial events |
-| `alert/main.py`, `notifier.py`, `formatter.py` | **Primary** Mac serial/Gmail integration |
-| `firmware/capture.ino` | Elif's separate classic ATmega328P Uno/Nano capture sketch |
-| `firmware/filter_coeffs.h` | Elif's alternative 3000 Hz SOS filter; unused by primary firmware |
-| `firmware/receiver.ino` | Empty placeholder; Elif's nonempty alternative receiver is still missing |
-| `matlab/*.m` | Supporting design/export to `firmware/filter_coeffs.h`; MATLAB Signal Processing Toolbox |
-| `analysis/capture_fft.py` | Supporting AVR FFT tool; NumPy, Matplotlib, pyserial; not the ESP32 CSV protocol |
+The optional `analysis/capture_fft.py` tool requires NumPy, Matplotlib, and
+pyserial, paired with `firmware/capture.ino` on a classic ATmega328P Uno/Nano.
+It saves raw captures in `data/` and plots in `docs/`; its protocol differs from
+the ESP32 diagnostics. The MATLAB scripts require Signal Processing Toolbox
+and export an alternative filter header, not the active ESP32 filter.
 
-Elif's separate notification files are still unavailable. Supporting files are
-unchanged by this architecture switch. Old local `firmware/secrets.h` remains
-ignored and unused; do not copy it into the upload sketch or commit it.
-
-## Tests / verification limits
+From the repository root, run the existing tests:
 
 ```sh
 python3 -m unittest discover -s 'Lab 2/alert' -v
 python3 -m unittest discover -s 'Lab 2/firmware/tests' -v
 ```
 
-Host tests validate the receiver's serial transition code with mocked Arduino APIs
-and feed its output through Python. They do not verify ADC timing, ESP32 scheduling,
-USB hardware, SMTP receipt, or the actual ESP32 toolchain. Arduino Verify and the
-physical steps above remain required. See [firmware details](firmware/README.md)
-and [Python details](alert/README.md).
+Tests mock SMTP/serial and compile the primary sketch against host Arduino and
+FreeRTOS stubs. They do not establish ESP32 toolchain compilation, ADC timing,
+physical selectivity, or email receipt. Arduino Verify and physical testing are
+still required.

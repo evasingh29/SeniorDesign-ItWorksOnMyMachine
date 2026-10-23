@@ -7,7 +7,7 @@
         band 1 = 425-445 Hz, band 2 = 490-510 Hz, band 3 = 525-545 Hz
     - USB serial BREACH/CLEAR events; Python on the Mac sends Gmail notifications
     - Experiment data: CSV every 200 ms with all 3 band levels + measured peak frequency,
-      and a full spectrum dump on request (works with log.py)
+      and a full spectrum dump on request
  
   Dependencies: ESP32 Arduino core only; no Wi-Fi/mail library or secrets header
   Board:   ESP32 Dev Module
