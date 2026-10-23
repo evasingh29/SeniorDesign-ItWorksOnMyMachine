@@ -49,7 +49,8 @@ const float ADC_FULL_SCALE_V = 3.1f;
 const float DIVIDER_GAIN     = 2.0f;   // 10k/10k divider before the ADC
  
 const int   N_BLOCK = 800;             // 200 ms blocks, 5 Hz bins
-const float SCAN_LO = 50.0f,  SCAN_HI = 1000.0f;
+const float HP_CUTOFF = 160.0f;      // ignore everything below this (lamp flicker, 60/120 Hz)
+const float SCAN_LO = HP_CUTOFF, SCAN_HI = 1000.0f;
 const float TX_LO   = 400.0f, TX_HI   = 600.0f;
 // =======================================================
  
@@ -72,6 +73,26 @@ struct Biquad {
   }
 };
  
+// ---------------- high-pass biquad (RBJ, Butterworth sections) ----------------
+struct HighPass {
+  float b0 = 0, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+  void set(float fc, float q) {
+    float w0 = 2.0f * PI * fc / SAMPLE_RATE;
+    float alpha = sinf(w0) / (2.0f * q), cw = cosf(w0);
+    float a0 = 1.0f + alpha;
+    b0 = (1.0f + cw) / 2.0f / a0; b1 = -(1.0f + cw) / a0; b2 = b0;
+    a1 = -2.0f * cw / a0; a2 = (1.0f - alpha) / a0;
+    z1 = z2 = 0;
+  }
+  inline float process(float x) {
+    float y = b0 * x + z1;
+    z1 = b1 * x - a1 * y + z2;
+    z2 = b2 * x - a2 * y;
+    return y;
+  }
+};
+HighPass hp1, hp2;               // 4th-order Butterworth high-pass at HP_CUTOFF
+
 struct Band {
   const char* name = "";
   Biquad s1, s2;
@@ -256,6 +277,8 @@ void setup() {
   bands[2].init("525-545", 525, 545);
   envK = 1.0f - expf(-1.0f / (SAMPLE_RATE * ENV_TAU_S));
   dcEst = analogRead(ADC_PIN);
+  hp1.set(HP_CUTOFF, 0.5412f);   // Q values of a 4th-order Butterworth
+  hp2.set(HP_CUTOFF, 1.3066f);
  
   for (int n = 0; n < N_BLOCK; n++) hannW[n] = 0.5f - 0.5f * cosf(2.0f * PI * n / (N_BLOCK - 1));
   float step = SAMPLE_RATE / N_BLOCK;
@@ -292,7 +315,7 @@ void loop() {
  
   // ---- band filters ----
   dcEst += 0.001f * (raw - dcEst);
-  float x = raw - dcEst;
+  float x = hp2.process(hp1.process(raw - dcEst));   // drop everything below 160 Hz
   for (int i = 0; i < 3; i++) bands[i].update(x, envK);
  
   uint32_t now = millis();
